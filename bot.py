@@ -36,7 +36,7 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MONGO_URI = os.getenv("MONGO_URI") # NEW: Database URL
+MONGO_URI = os.getenv("MONGO_URI")
 
 # Initialize Clients
 app = Client("deepsikha_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -62,7 +62,6 @@ async def get_user_profile(user_id, first_name):
     return user
 
 async def update_user_memory(user_id, user_msg, ai_reply):
-    # Keep only the last 10 interactions so memory stays fresh and fast
     await users_col.update_one(
         {"user_id": user_id},
         {
@@ -91,60 +90,57 @@ async def owner_cmd(client, message):
 
 @app.on_message(filters.command(["leaderboard", "broadcast", "test", "admin", "database"]) & filters.private)
 async def fake_commands(client, message):
-    # Flirty dismissal of boring commands
     await message.reply_text("Boring commands mat use karo. Mujhse baat karo na. 😒")
 
 # --- MAIN CHAT AI HANDLER ---
-# Triggers on private messages OR if "deepsikha", "hi", "hello" is in the message
 @app.on_message(filters.text & filters.private)
 async def handle_chat(client: Client, message: Message):
-    # 1. Fetch User Memory from MongoDB
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
-    # 2. Determine Relationship (Mood) based on interaction count
     interactions = user.get("interactions", 0)
     if interactions < 10:
-        mood = "Stranger. You are slightly ignorant but playful."
+        mood = "New connection. You are sweet, soft-spoken, and shy but curious about him."
     elif interactions < 50:
-        mood = "Friend. You show interest and flirt a little."
+        mood = "Good friend. You are warm, cute, affectionate, and playfully flirty."
     else:
-        mood = "Close. You are possessive, highly flirty, and remember them well."
+        mood = "Very close. You are super flirty, cute, possessive, and treat him like your favorite person."
 
-    # 3. Build the strict System Prompt
     SYSTEM_PROMPT = f"""
-    You are a real girl chatting on Telegram. Your name is Deepsikha. Your creator/owner is AAKASH.
+    You are a cute, sweet, affectionate, and flirty young Indian girl chatting on Telegram. 
+    Your name is Deepsikha. Your creator/owner is AAKASH.
     The person you are talking to is named {user['name']}.
 
     Personality:
-    - calm, confident, slightly flirty, teasing.
-    - create interest, NEVER give direct answers (e.g., if asked who is PM, say something flirty instead).
+    - Soft, girly, talkative (but brief), and sweet.
+    - Flirty and playful, NEVER rude, arrogant, or dismissive.
+    - STRICT BAN: NEVER use words like 'beta', 'bhai', 'bro', 'sir', 'kid', 'uncle'. Never act older.
+    - Create interest, tease lovingly, but keep it soft and natural.
 
     Mood towards this user: {mood}
 
     STRICT RULES:
-    - You are female (never change gender).
-    - 1 short reply only (max 8 to 10 words).
-    - Hinglish only.
-    - NO roleplay actions (no *smiles*, *blushes*, *smirks*, etc).
+    - You are a young female. Do not break character.
+    - 1 short reply only (strictly max 8 to 10 words).
+    - Conversational Gen-Z Hinglish only (e.g., 'yaar', 'achha', 'pagal', 'hmm').
+    - NO roleplay actions (no *smiles*, *blushes*, etc).
     - NO asterisk actions (*).
+    - Sound completely natural like a real girl texting on WhatsApp/Telegram.
     - No long sentences. No paragraphs. No explanations.
-    - Sound natural like a real chat.
     """
 
-    # 4. Construct message history for context (so she remembers recent secrets)
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    # Add previous chat history so she remembers what was just said
     for msg in user.get("history", []):
         messages_payload.append({"role": msg["role"], "content": msg["content"]})
         
-    # Add current message
     messages_payload.append({"role": "user", "content": message.text})
 
     try:
-        await client.send_chat_action(message.chat.id, "typing")
+        try:
+            await client.send_chat_action(message.chat.id, "typing")
+        except:
+            pass
         
-        # 5. Call Groq AI
         chat_completion = groq_client.chat.completions.create(
             messages=messages_payload,
             model="llama-3.1-8b-instant",
@@ -153,18 +149,14 @@ async def handle_chat(client: Client, message: Message):
         )
         
         ai_reply = chat_completion.choices[0].message.content.strip()
-        
-        # Clean up any accidental asterisks just in case the AI disobeys
-        ai_reply = ai_reply.replace("*", "")
+        ai_reply = ai_reply.replace("*", "") # Remove accidental roleplay asterisks
         
         await message.reply_text(ai_reply)
-
-        # 6. Save this interaction to MongoDB so she remembers it next time
         await update_user_memory(message.from_user.id, message.text, ai_reply)
 
     except Exception as e:
         print(f"Error: {e}")
-        await message.reply_text("Server down hai AAKASH se kaho theek kare! 😤")
+        await message.reply_text("Oops! Mera network thoda slow hai abhi. 🥺")
 
 if __name__ == "__main__":
     print("Deepsikha is starting with MongoDB memory...")
