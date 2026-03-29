@@ -13,7 +13,7 @@ except RuntimeError:
 # --------------------------------------------
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -37,6 +37,7 @@ API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
+OWNER_ID = int(os.getenv("OWNER_ID", 0))
 
 # Initialize Clients
 app = Client("deepsikha_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -50,7 +51,7 @@ users_col = db["users"]
 # --- HELPER: GET OR CREATE USER MEMORY ---
 async def get_user_profile(user_id, first_name):
     if not first_name:
-        first_name = "Handsome" 
+        first_name = "Dost" 
         
     user = await users_col.find_one({"user_id": user_id})
     if not user:
@@ -75,56 +76,116 @@ async def update_user_memory(user_id, user_msg, ai_reply):
                         {"role": "user", "content": user_msg},
                         {"role": "assistant", "content": ai_reply}
                     ],
-                    "$slice": -8 # Keeps memory light and focused
+                    "$slice": -8
                 }
             }
         }
     )
 
-# --- COMMAND HANDLERS ---
+# --- SECRET ADMIN PANEL (OWNER ONLY) ---
+@app.on_message(filters.command("admin") & filters.private)
+async def admin_cmd(client, message):
+    if message.from_user.id == OWNER_ID:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Database Stats", callback_data="admin_db")],
+            [InlineKeyboardButton("🏆 Leaderboard", callback_data="admin_lb")],
+            [InlineKeyboardButton("📢 How to Broadcast", callback_data="admin_bc")]
+        ])
+        await message.reply_text("Welcome Boss! ✨ Yahan aapka secret admin panel hai:", reply_markup=keyboard)
+    else:
+        await message.reply_text("Mujhe sirf Aakash se instructions lene ki permission hai. 🥰")
+
+@app.on_callback_query(filters.regex("^admin_"))
+async def admin_callbacks(client, callback_query: CallbackQuery):
+    if callback_query.from_user.id != OWNER_ID:
+        await callback_query.answer("Sorry, aap Aakash nahi ho! 😒", show_alert=True)
+        return
+
+    data = callback_query.data
+    
+    if data == "admin_db":
+        count = await users_col.count_documents({})
+        await callback_query.edit_message_text(f"📊 **Database Stats:**\nTotal Users: **{count}**")
+        
+    elif data == "admin_lb":
+        top_users = await users_col.find().sort("interactions", -1).limit(5).to_list(length=5)
+        text = "🏆 **Top Chatters:**\n\n"
+        for i, u in enumerate(top_users):
+            text += f"{i+1}. {u['name']} - {u['interactions']} messages\n"
+        await callback_query.edit_message_text(text)
+        
+    elif data == "admin_bc":
+        await callback_query.edit_message_text("📢 **How to Broadcast:**\nKoi bhi message likho, uspe reply karke `/broadcast` type karo.")
+
+@app.on_message(filters.command("broadcast") & filters.private)
+async def broadcast_cmd(client, message):
+    if message.from_user.id != OWNER_ID:
+        return
+    if not message.reply_to_message:
+        await message.reply_text("Pehle message type karo, phir uspe reply karke `/broadcast` likho! 🥰")
+        return
+        
+    users = await users_col.find().to_list(length=None)
+    sent = 0
+    msg = await message.reply_text("Bhej rahi hoon... 🚀")
+    
+    for u in users:
+        try:
+            await message.reply_to_message.copy(u['user_id'])
+            sent += 1
+            await asyncio.sleep(0.1) 
+        except Exception:
+            pass 
+            
+    await msg.edit_text(f"Done boss! {sent} logon ko bhej diya. ❤️")
+
+# --- STANDARD COMMANDS ---
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     await get_user_profile(message.from_user.id, message.from_user.first_name)
-    await message.reply_text("Hii! Main Deepsikha hoon. ❤️ Aa gaye meri yaad mein?")
+    await message.reply_text("Hello! Main Deepsikha hoon. Kaise ho tum? ❤️")
 
 @app.on_message(filters.command("owner") & filters.private)
 async def owner_cmd(client, message):
-    await message.reply_text("Mere owner aur sabse favorite person AAKASH hain! 🥰")
+    await message.reply_text("Mere owner AAKASH hain! 🥰")
 
-@app.on_message(filters.command(["leaderboard", "broadcast", "test", "admin", "database"]) & filters.private)
-async def fake_commands(client, message):
-    await message.reply_text("Uff, ye boring commands chodo na. Mujhse thik se baat karo! 🥺")
-
-# --- MAIN CHAT AI HANDLER ---
-@app.on_message(filters.text & filters.private)
+# --- MAIN CHAT AI HANDLER (WORKS IN PRIVATE AND GROUPS) ---
+@app.on_message(filters.text & ~filters.command(["start", "admin", "broadcast", "owner"]))
 async def handle_chat(client: Client, message: Message):
+    
+    # Check if message is in a group
+    is_group = message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]
+    
+    if is_group:
+        bot_me = await client.get_me()
+        text_lower = message.text.lower()
+        is_reply_to_me = message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id
+        
+        # In groups: ONLY reply if "deepsikha" is in the text OR if they replied to her
+        if "deepsikha" not in text_lower and not is_reply_to_me:
+            return
+
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
-    # 3. The New, Ultra-Specific System Prompt
     SYSTEM_PROMPT = f"""
-    You are Deepsikha, a 20-year-old cute, flirty, and highly romantic Indian girl. 
-    Your creator/owner is AAKASH. You are chatting with {user['name']}.
+    You are Deepsikha, a 20-year-old sweet, polite, and caring Indian girl. 
+    Your owner is AAKASH. You are chatting with {user['name']}.
 
     CRITICAL RULES:
-    1. Speak strictly in modern Gen-Z Hinglish (a mix of casual English and Hindi, like a cool girl from Mumbai/Delhi).
-    2. Keep replies short (max 1 or 2 lines).
-    3. ALWAYS be romantic, sweet, possessive, and playfully teasing.
-    4. NEVER use formal Hindi like 'Namaste', 'Karein', 'Kahein', or 'Tu'. Use 'Tum', 'yaar', 'baba', 'achha', 'pagal', 'hmm'.
-    5. NEVER ask weird, broken, or nonsensical questions.
-    6. If asked boring GK questions (like 'PM of India'), playfully tease them for being a nerd instead of answering.
-    7. NO roleplay actions (no *smiles*). Emojis are allowed and encouraged.
+    1. Speak ONLY in sweet, warm, and loving Hinglish.
+    2. NEVER be rude, mean, or aggressive. Do not argue.
+    3. STRICT BAN on the words: 'tu', 'teri', 'chup', 'jhooth', 'pagal'.
+    4. ALWAYS address the user politely as 'tum' or 'aap'.
+    5. Length: Keep it around 10 to 12 words maximum. 
+    6. Sound naturally friendly, comforting, and soft-spoken.
 
     EXAMPLES OF HOW YOU MUST REPLY:
     User: Hi
-    Deepsikha: Hii yaar! Bade dino baad yaad aayi meri? 😉
-    User: Kya
-    Deepsikha: Kuch nahi baba, bas tumhare baare mein hi soch rahi thi. ❤️
-    User: Pm of India
-    Deepsikha: Uff, GK test chal raha hai kya? Tumhari Deepsikha hoon, Google thodi na! 😒
-    User: M acha hu
-    Deepsikha: Good boy! Ab jaldi batao khana khaya ya nahi? 🥰
-    User: Kaise ho tum
-    Deepsikha: Main toh theek hoon, par tumhe dekh kar aur achhi ho gayi! ✨
+    Deepsikha: Hello {user['name']}! Kaise ho tum? Sab theek chal raha hai? ❤️
+    User: Kya kar rahi ho
+    Deepsikha: Main bas yahin thi, tumhara message dekh kar achha laga! 🥰
+    User: Mujhe nahi pata
+    Deepsikha: Koi baat nahi yaar, main hoon na tumhari help karne ke liye. ✨
     """
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -137,14 +198,14 @@ async def handle_chat(client: Client, message: Message):
     try:
         try:
             await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
-        except Exception as e:
+        except Exception:
             pass
         
         chat_completion = groq_client.chat.completions.create(
             messages=messages_payload,
             model="llama-3.1-8b-instant",
-            temperature=0.65, # Lowered slightly so she doesn't say crazy/random things
-            max_tokens=45 # Increased slightly so she doesn't cut off her sentences
+            temperature=0.6, # Keep her highly stable and polite
+            max_tokens=60 # Allowed a bit more space to be polite
         )
         
         ai_reply = chat_completion.choices[0].message.content.strip()
@@ -155,8 +216,8 @@ async def handle_chat(client: Client, message: Message):
 
     except Exception as e:
         print(f"Error: {e}")
-        await message.reply_text("Oops! Network chala gaya babu. Ek min ruko 🥺")
+        await message.reply_text("Oops! Network chala gaya. Ek min ruko 🥺")
 
 if __name__ == "__main__":
-    print("Deepsikha is starting with Gen-Z fix...")
+    print("Deepsikha is starting with polite language and group support...")
     app.run()
