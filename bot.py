@@ -12,7 +12,7 @@ except RuntimeError:
     asyncio.set_event_loop(loop)
 # --------------------------------------------
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums  # <--- FIXED: Added enums here
 from pyrogram.types import Message
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -49,13 +49,17 @@ users_col = db["users"]
 
 # --- HELPER: GET OR CREATE USER MEMORY ---
 async def get_user_profile(user_id, first_name):
+    # Just in case Telegram hides the first name
+    if not first_name:
+        first_name = "Handsome" 
+        
     user = await users_col.find_one({"user_id": user_id})
     if not user:
         user = {
             "user_id": user_id,
             "name": first_name,
             "interactions": 0,
-            "history": [], # Stores last few messages for memory
+            "history": [], 
             "joined_at": datetime.now()
         }
         await users_col.insert_one(user)
@@ -72,7 +76,7 @@ async def update_user_memory(user_id, user_msg, ai_reply):
                         {"role": "user", "content": user_msg},
                         {"role": "assistant", "content": ai_reply}
                     ],
-                    "$slice": -10 # Keeps only last 10 messages
+                    "$slice": -10 
                 }
             }
         }
@@ -136,10 +140,11 @@ async def handle_chat(client: Client, message: Message):
     messages_payload.append({"role": "user", "content": message.text})
 
     try:
+        # <--- FIXED: Now using the official Pyrogram Enum instead of a string
         try:
-            await client.send_chat_action(message.chat.id, "typing")
-        except:
-            pass
+            await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
+        except Exception as e:
+            print(f"Typing action error (ignored): {e}")
         
         chat_completion = groq_client.chat.completions.create(
             messages=messages_payload,
@@ -149,7 +154,7 @@ async def handle_chat(client: Client, message: Message):
         )
         
         ai_reply = chat_completion.choices[0].message.content.strip()
-        ai_reply = ai_reply.replace("*", "") # Remove accidental roleplay asterisks
+        ai_reply = ai_reply.replace("*", "") 
         
         await message.reply_text(ai_reply)
         await update_user_memory(message.from_user.id, message.text, ai_reply)
@@ -159,5 +164,5 @@ async def handle_chat(client: Client, message: Message):
         await message.reply_text("Oops! Mera network thoda slow hai abhi. 🥺")
 
 if __name__ == "__main__":
-    print("Deepsikha is starting with MongoDB memory...")
+    print("Deepsikha is starting...")
     app.run()
