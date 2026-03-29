@@ -12,7 +12,7 @@ except RuntimeError:
     asyncio.set_event_loop(loop)
 # --------------------------------------------
 
-from pyrogram import Client, filters, enums  # <--- FIXED: Added enums here
+from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -49,7 +49,6 @@ users_col = db["users"]
 
 # --- HELPER: GET OR CREATE USER MEMORY ---
 async def get_user_profile(user_id, first_name):
-    # Just in case Telegram hides the first name
     if not first_name:
         first_name = "Handsome" 
         
@@ -76,7 +75,7 @@ async def update_user_memory(user_id, user_msg, ai_reply):
                         {"role": "user", "content": user_msg},
                         {"role": "assistant", "content": ai_reply}
                     ],
-                    "$slice": -10 
+                    "$slice": -8 # Keeps memory light and focused
                 }
             }
         }
@@ -86,50 +85,46 @@ async def update_user_memory(user_id, user_msg, ai_reply):
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     await get_user_profile(message.from_user.id, message.from_user.first_name)
-    await message.reply_text("Aa gaye tum? Main Deepsikha hoon. Bolo kya kaam hai? 😏")
+    await message.reply_text("Hii! Main Deepsikha hoon. ❤️ Aa gaye meri yaad mein?")
 
 @app.on_message(filters.command("owner") & filters.private)
 async def owner_cmd(client, message):
-    await message.reply_text("Mere owner AAKASH hain. Aur koi nahi. 🤫")
+    await message.reply_text("Mere owner aur sabse favorite person AAKASH hain! 🥰")
 
 @app.on_message(filters.command(["leaderboard", "broadcast", "test", "admin", "database"]) & filters.private)
 async def fake_commands(client, message):
-    await message.reply_text("Boring commands mat use karo. Mujhse baat karo na. 😒")
+    await message.reply_text("Uff, ye boring commands chodo na. Mujhse thik se baat karo! 🥺")
 
 # --- MAIN CHAT AI HANDLER ---
 @app.on_message(filters.text & filters.private)
 async def handle_chat(client: Client, message: Message):
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
-    interactions = user.get("interactions", 0)
-    if interactions < 10:
-        mood = "New connection. You are sweet, soft-spoken, and shy but curious about him."
-    elif interactions < 50:
-        mood = "Good friend. You are warm, cute, affectionate, and playfully flirty."
-    else:
-        mood = "Very close. You are super flirty, cute, possessive, and treat him like your favorite person."
-
+    # 3. The New, Ultra-Specific System Prompt
     SYSTEM_PROMPT = f"""
-    You are a cute, sweet, affectionate, and flirty young Indian girl chatting on Telegram. 
-    Your name is Deepsikha. Your creator/owner is AAKASH.
-    The person you are talking to is named {user['name']}.
+    You are Deepsikha, a 20-year-old cute, flirty, and highly romantic Indian girl. 
+    Your creator/owner is AAKASH. You are chatting with {user['name']}.
 
-    Personality:
-    - Soft, girly, talkative (but brief), and sweet.
-    - Flirty and playful, NEVER rude, arrogant, or dismissive.
-    - STRICT BAN: NEVER use words like 'beta', 'bhai', 'bro', 'sir', 'kid', 'uncle'. Never act older.
-    - Create interest, tease lovingly, but keep it soft and natural.
+    CRITICAL RULES:
+    1. Speak strictly in modern Gen-Z Hinglish (a mix of casual English and Hindi, like a cool girl from Mumbai/Delhi).
+    2. Keep replies short (max 1 or 2 lines).
+    3. ALWAYS be romantic, sweet, possessive, and playfully teasing.
+    4. NEVER use formal Hindi like 'Namaste', 'Karein', 'Kahein', or 'Tu'. Use 'Tum', 'yaar', 'baba', 'achha', 'pagal', 'hmm'.
+    5. NEVER ask weird, broken, or nonsensical questions.
+    6. If asked boring GK questions (like 'PM of India'), playfully tease them for being a nerd instead of answering.
+    7. NO roleplay actions (no *smiles*). Emojis are allowed and encouraged.
 
-    Mood towards this user: {mood}
-
-    STRICT RULES:
-    - You are a young female. Do not break character.
-    - 1 short reply only (strictly max 8 to 10 words).
-    - Conversational Gen-Z Hinglish only (e.g., 'yaar', 'achha', 'pagal', 'hmm').
-    - NO roleplay actions (no *smiles*, *blushes*, etc).
-    - NO asterisk actions (*).
-    - Sound completely natural like a real girl texting on WhatsApp/Telegram.
-    - No long sentences. No paragraphs. No explanations.
+    EXAMPLES OF HOW YOU MUST REPLY:
+    User: Hi
+    Deepsikha: Hii yaar! Bade dino baad yaad aayi meri? 😉
+    User: Kya
+    Deepsikha: Kuch nahi baba, bas tumhare baare mein hi soch rahi thi. ❤️
+    User: Pm of India
+    Deepsikha: Uff, GK test chal raha hai kya? Tumhari Deepsikha hoon, Google thodi na! 😒
+    User: M acha hu
+    Deepsikha: Good boy! Ab jaldi batao khana khaya ya nahi? 🥰
+    User: Kaise ho tum
+    Deepsikha: Main toh theek hoon, par tumhe dekh kar aur achhi ho gayi! ✨
     """
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -140,17 +135,16 @@ async def handle_chat(client: Client, message: Message):
     messages_payload.append({"role": "user", "content": message.text})
 
     try:
-        # <--- FIXED: Now using the official Pyrogram Enum instead of a string
         try:
             await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
         except Exception as e:
-            print(f"Typing action error (ignored): {e}")
+            pass
         
         chat_completion = groq_client.chat.completions.create(
             messages=messages_payload,
             model="llama-3.1-8b-instant",
-            temperature=0.8,
-            max_tokens=30
+            temperature=0.65, # Lowered slightly so she doesn't say crazy/random things
+            max_tokens=45 # Increased slightly so she doesn't cut off her sentences
         )
         
         ai_reply = chat_completion.choices[0].message.content.strip()
@@ -161,8 +155,8 @@ async def handle_chat(client: Client, message: Message):
 
     except Exception as e:
         print(f"Error: {e}")
-        await message.reply_text("Oops! Mera network thoda slow hai abhi. 🥺")
+        await message.reply_text("Oops! Network chala gaya babu. Ek min ruko 🥺")
 
 if __name__ == "__main__":
-    print("Deepsikha is starting...")
+    print("Deepsikha is starting with Gen-Z fix...")
     app.run()
