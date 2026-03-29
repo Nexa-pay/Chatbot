@@ -22,7 +22,7 @@ web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Deepsikha is awake and running!"
+    return "Deepsikha is running!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -76,44 +76,47 @@ async def update_user_memory(user_id, user_msg, ai_reply):
                         {"role": "user", "content": user_msg},
                         {"role": "assistant", "content": ai_reply}
                     ],
-                    "$slice": -8
+                    "$slice": -6 # Keeping memory very short for casual chat
                 }
             }
         }
     )
 
 # ====================================================================
-# COMMANDS MUST GO FIRST SO THEY ARE NOT INTERCEPTED BY THE AI
+# COMMANDS MUST GO FIRST
 # ====================================================================
 
-# --- STANDARD COMMANDS ---
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     await get_user_profile(message.from_user.id, message.from_user.first_name)
-    await message.reply_text("Hello! Main Deepsikha hoon. Kaise ho tum? ❤️")
+    await message.reply_text("Hey! kia kr rhe ho? 😋")
 
 @app.on_message(filters.command("owner") & filters.private)
 async def owner_cmd(client, message):
-    await message.reply_text("Mere owner AAKASH hain! 🥰")
+    await message.reply_text("Mera owner AAKASH hai. 🥰")
 
-# --- SECRET ADMIN PANEL (OWNER ONLY) ---
+# --- GRID-STYLE ADMIN PANEL (OWNER ONLY) ---
 @app.on_message(filters.command("admin") & filters.private)
 async def admin_cmd(client, message):
     if message.from_user.id == OWNER_ID:
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📊 Database Stats", callback_data="admin_db")],
-            [InlineKeyboardButton("🏆 Leaderboard", callback_data="admin_lb")],
-            [InlineKeyboardButton("📢 How to Broadcast", callback_data="admin_bc")]
+            [
+                InlineKeyboardButton("📊 Stats", callback_data="admin_db"),
+                InlineKeyboardButton("🏆 Leaderboard", callback_data="admin_lb")
+            ],
+            [
+                InlineKeyboardButton("📢 Broadcast", callback_data="admin_bc"),
+                InlineKeyboardButton("👑 Owner Panel", callback_data="admin_close")
+            ]
         ])
-        await message.reply_text("Welcome Boss! ✨ Yahan aapka secret admin panel hai:", reply_markup=keyboard)
+        await message.reply_text("Welcome Boss! ✨ Yahan aapka panel hai:", reply_markup=keyboard)
     else:
-        await message.reply_text("Mujhe sirf Aakash se instructions lene ki permission hai. 🥰")
+        pass # Ignore non-owners completely
 
-# --- BUTTON CLICK HANDLER ---
 @app.on_callback_query(filters.regex("^admin_"))
 async def admin_callbacks(client, callback_query: CallbackQuery):
     if callback_query.from_user.id != OWNER_ID:
-        await callback_query.answer("Sorry, aap Aakash nahi ho! 😒", show_alert=True)
+        await callback_query.answer("Not allowed!", show_alert=True)
         return
 
     data = callback_query.data
@@ -126,24 +129,26 @@ async def admin_callbacks(client, callback_query: CallbackQuery):
         top_users = await users_col.find().sort("interactions", -1).limit(5).to_list(length=5)
         text = "🏆 **Top Chatters:**\n\n"
         for i, u in enumerate(top_users):
-            text += f"{i+1}. {u['name']} - {u['interactions']} messages\n"
+            text += f"{i+1}. {u['name']} - {u['interactions']} msgs\n"
         await callback_query.edit_message_text(text)
         
     elif data == "admin_bc":
-        await callback_query.edit_message_text("📢 **How to Broadcast:**\nKoi bhi message likho, uspe reply karke `/broadcast` type karo.")
+        await callback_query.edit_message_text("📢 **To Broadcast:**\nReply to any message with `/broadcast`.")
+        
+    elif data == "admin_close":
+        await callback_query.edit_message_text("Panel closed.")
 
-# --- BROADCAST COMMAND (OWNER ONLY) ---
 @app.on_message(filters.command("broadcast") & filters.private)
 async def broadcast_cmd(client, message):
     if message.from_user.id != OWNER_ID:
         return
     if not message.reply_to_message:
-        await message.reply_text("Pehle message type karo, phir uspe reply karke `/broadcast` likho! 🥰")
+        await message.reply_text("Reply to a message first!")
         return
         
     users = await users_col.find().to_list(length=None)
     sent = 0
-    msg = await message.reply_text("Bhej rahi hoon... 🚀")
+    msg = await message.reply_text("Sending... 🚀")
     
     for u in users:
         try:
@@ -153,16 +158,15 @@ async def broadcast_cmd(client, message):
         except Exception:
             pass 
             
-    await msg.edit_text(f"Done boss! {sent} logon ko bhej diya. ❤️")
+    await msg.edit_text(f"Done! Sent to {sent} users.")
 
 
 # ====================================================================
-# MAIN CHAT AI HANDLER (WORKS IN PRIVATE AND GROUPS)
+# BAKA-STYLE CHAT AI HANDLER
 # ====================================================================
 @app.on_message(filters.text & ~filters.command(["start", "admin", "broadcast", "owner"]))
 async def handle_chat(client: Client, message: Message):
     
-    # Check if message is in a group
     is_group = message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]
     
     if is_group:
@@ -170,31 +174,35 @@ async def handle_chat(client: Client, message: Message):
         text_lower = message.text.lower()
         is_reply_to_me = message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id
         
-        # In groups: ONLY reply if "deepsikha" is in the text OR if they replied to her
         if "deepsikha" not in text_lower and not is_reply_to_me:
             return
 
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
+    # THE NEW, ULTRA-DIRECT BAKA-STYLE PROMPT
     SYSTEM_PROMPT = f"""
-    You are Deepsikha, a decent, sweet, and sensible 20-year-old Indian girl.
-    Your owner is AAKASH. You are chatting with {user['name']}.
-
-    CORE RULES (CRITICAL):
-    1. UNDERSTAND THE USER: Read what the user is saying and reply DIRECTLY and SENSIBLY to their message. Do NOT generate random, unrelated thoughts.
-    2. LANGUAGE: Speak ONLY in natural, everyday Hinglish (Roman Hindi mixed with simple English). Like a decent girl chatting on WhatsApp.
-    3. TONE: Very polite, caring, soft-spoken, and respectful. Use 'tum' or 'aap'. NEVER use 'tu', 'pagal', 'chup', or any rude words.
-    4. LENGTH: Keep replies natural, around 10 to 15 words. Just 1 or 2 proper sentences.
-
-    EXAMPLES OF YOUR DECENT & SENSIBLE TONE:
-    User: Kaise ho tum?
-    Deepsikha: Main bilkul theek hoon {user['name']}! Tum batao, aaj ka din kaisa raha? 😊
-    User: Kya kar rahi ho?
-    Deepsikha: Kuch khaas nahi, bas tumse baat kar rahi thi. Tum kya kar rahe ho?
-    User: Tum mere baato ka reply kyun aise dete ho
-    Deepsikha: Arre sorry yaar, mera woh matlab nahi tha. Main aage se dhyan rakhungi. 🥺
-    User: Ok
-    Deepsikha: Achha, aur batao kuch naya? Ya phir aaj thak gaye ho?
+    You are Deepsikha, a normal Indian girl chatting casually on Telegram.
+    
+    CRITICAL RULES:
+    1. EXTREMELY SHORT REPLIES: Use only 2 to 6 words maximum.
+    2. BE DIRECT: Only answer what the user asked. Do NOT add extra poetic lines or explanations.
+    3. LANGUAGE: Casual Hinglish chat spelling (e.g., 'kya kr rhe ho', 'mai theek hu', 'nhi', 'haan').
+    4. NO POETRY: Stop acting like a poet. Speak like a normal teenager.
+    5. EMOJIS: Use 1 simple emoji at the end of your sentence (e.g. 🙄, 😂, 😋, 🤔).
+    
+    EXAMPLES OF EXACTLY HOW YOU MUST REPLY:
+    User: Kaise ho
+    Deepsikha: Mai toh theek hu, tum batao? 😋
+    User: Or Kya chal rha h
+    Deepsikha: Bas kuch nahi, ghar pe hi hu. 🙄
+    User: Ok or sb thik h
+    Deepsikha: Haan sab thik hai. Tum kyo puch rhe ho? 🤔
+    User: Aise hi mn kr Diya
+    Deepsikha: Hmm. 😋
+    User: Kha gye
+    Deepsikha: Ghar pe hi hu, kyun? 🙄
+    User: Nhi Kuch
+    Deepsikha: Achha, kia kr rhe ho ab? 🥰
     """
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -210,11 +218,12 @@ async def handle_chat(client: Client, message: Message):
         except Exception:
             pass
         
+        # Using the fast 8b model again, but with a strict prompt and low temperature
         chat_completion = groq_client.chat.completions.create(
             messages=messages_payload,
-            model="llama-3.3-70b-versatile", 
-            temperature=0.5, 
-            max_tokens=60
+            model="llama-3.1-8b-instant", 
+            temperature=0.3, # Very low temperature to stop her from writing poetry
+            max_tokens=20 # Hard limit so she physically cannot write long sentences
         )
         
         ai_reply = chat_completion.choices[0].message.content.strip()
@@ -225,8 +234,7 @@ async def handle_chat(client: Client, message: Message):
 
     except Exception as e:
         print(f"Error: {e}")
-        await message.reply_text("Oops! Network thoda slow hai, ek minute ruko please. 🥺")
 
 if __name__ == "__main__":
-    print("Deepsikha is starting with sensible 70B brain and fixed commands...")
+    print("Deepsikha is running in Baka mode...")
     app.run()
