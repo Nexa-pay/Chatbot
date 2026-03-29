@@ -60,7 +60,7 @@ async def handle_message(client: Client, message: Message):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": message.text}
             ],
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",  # <--- UPDATED MODEL HERE
             temperature=0.7,
             max_tokens=30
         )
