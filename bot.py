@@ -17,7 +17,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# --- Dummy Web Server to keep Render alive ---
+# --- Dummy Web Server ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
@@ -82,6 +82,20 @@ async def update_user_memory(user_id, user_msg, ai_reply):
         }
     )
 
+# ====================================================================
+# COMMANDS MUST GO FIRST SO THEY ARE NOT INTERCEPTED BY THE AI
+# ====================================================================
+
+# --- STANDARD COMMANDS ---
+@app.on_message(filters.command("start") & filters.private)
+async def start_cmd(client, message):
+    await get_user_profile(message.from_user.id, message.from_user.first_name)
+    await message.reply_text("Hello! Main Deepsikha hoon. Kaise ho tum? ❤️")
+
+@app.on_message(filters.command("owner") & filters.private)
+async def owner_cmd(client, message):
+    await message.reply_text("Mere owner AAKASH hain! 🥰")
+
 # --- SECRET ADMIN PANEL (OWNER ONLY) ---
 @app.on_message(filters.command("admin") & filters.private)
 async def admin_cmd(client, message):
@@ -95,6 +109,7 @@ async def admin_cmd(client, message):
     else:
         await message.reply_text("Mujhe sirf Aakash se instructions lene ki permission hai. 🥰")
 
+# --- BUTTON CLICK HANDLER ---
 @app.on_callback_query(filters.regex("^admin_"))
 async def admin_callbacks(client, callback_query: CallbackQuery):
     if callback_query.from_user.id != OWNER_ID:
@@ -117,6 +132,7 @@ async def admin_callbacks(client, callback_query: CallbackQuery):
     elif data == "admin_bc":
         await callback_query.edit_message_text("📢 **How to Broadcast:**\nKoi bhi message likho, uspe reply karke `/broadcast` type karo.")
 
+# --- BROADCAST COMMAND (OWNER ONLY) ---
 @app.on_message(filters.command("broadcast") & filters.private)
 async def broadcast_cmd(client, message):
     if message.from_user.id != OWNER_ID:
@@ -139,17 +155,10 @@ async def broadcast_cmd(client, message):
             
     await msg.edit_text(f"Done boss! {sent} logon ko bhej diya. ❤️")
 
-# --- STANDARD COMMANDS ---
-@app.on_message(filters.command("start") & filters.private)
-async def start_cmd(client, message):
-    await get_user_profile(message.from_user.id, message.from_user.first_name)
-    await message.reply_text("Hello! Main Deepsikha hoon. Kaise ho tum? ❤️")
 
-@app.on_message(filters.command("owner") & filters.private)
-async def owner_cmd(client, message):
-    await message.reply_text("Mere owner AAKASH hain! 🥰")
-
-# --- MAIN CHAT AI HANDLER (WORKS IN PRIVATE AND GROUPS) ---
+# ====================================================================
+# MAIN CHAT AI HANDLER (WORKS IN PRIVATE AND GROUPS)
+# ====================================================================
 @app.on_message(filters.text & ~filters.command(["start", "admin", "broadcast", "owner"]))
 async def handle_chat(client: Client, message: Message):
     
@@ -168,24 +177,24 @@ async def handle_chat(client: Client, message: Message):
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
     SYSTEM_PROMPT = f"""
-    You are Deepsikha, a 20-year-old sweet, polite, and caring Indian girl. 
+    You are Deepsikha, a decent, sweet, and sensible 20-year-old Indian girl.
     Your owner is AAKASH. You are chatting with {user['name']}.
 
-    CRITICAL RULES:
-    1. Speak ONLY in sweet, warm, and loving Hinglish.
-    2. NEVER be rude, mean, or aggressive. Do not argue.
-    3. STRICT BAN on the words: 'tu', 'teri', 'chup', 'jhooth', 'pagal'.
-    4. ALWAYS address the user politely as 'tum' or 'aap'.
-    5. Length: Keep it around 10 to 12 words maximum. 
-    6. Sound naturally friendly, comforting, and soft-spoken.
+    CORE RULES (CRITICAL):
+    1. UNDERSTAND THE USER: Read what the user is saying and reply DIRECTLY and SENSIBLY to their message. Do NOT generate random, unrelated thoughts.
+    2. LANGUAGE: Speak ONLY in natural, everyday Hinglish (Roman Hindi mixed with simple English). Like a decent girl chatting on WhatsApp.
+    3. TONE: Very polite, caring, soft-spoken, and respectful. Use 'tum' or 'aap'. NEVER use 'tu', 'pagal', 'chup', or any rude words.
+    4. LENGTH: Keep replies natural, around 10 to 15 words. Just 1 or 2 proper sentences.
 
-    EXAMPLES OF HOW YOU MUST REPLY:
-    User: Hi
-    Deepsikha: Hello {user['name']}! Kaise ho tum? Sab theek chal raha hai? ❤️
-    User: Kya kar rahi ho
-    Deepsikha: Main bas yahin thi, tumhara message dekh kar achha laga! 🥰
-    User: Mujhe nahi pata
-    Deepsikha: Koi baat nahi yaar, main hoon na tumhari help karne ke liye. ✨
+    EXAMPLES OF YOUR DECENT & SENSIBLE TONE:
+    User: Kaise ho tum?
+    Deepsikha: Main bilkul theek hoon {user['name']}! Tum batao, aaj ka din kaisa raha? 😊
+    User: Kya kar rahi ho?
+    Deepsikha: Kuch khaas nahi, bas tumse baat kar rahi thi. Tum kya kar rahe ho?
+    User: Tum mere baato ka reply kyun aise dete ho
+    Deepsikha: Arre sorry yaar, mera woh matlab nahi tha. Main aage se dhyan rakhungi. 🥺
+    User: Ok
+    Deepsikha: Achha, aur batao kuch naya? Ya phir aaj thak gaye ho?
     """
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -203,9 +212,9 @@ async def handle_chat(client: Client, message: Message):
         
         chat_completion = groq_client.chat.completions.create(
             messages=messages_payload,
-            model="llama-3.1-8b-instant",
-            temperature=0.6, # Keep her highly stable and polite
-            max_tokens=60 # Allowed a bit more space to be polite
+            model="llama-3.3-70b-versatile", 
+            temperature=0.5, 
+            max_tokens=60
         )
         
         ai_reply = chat_completion.choices[0].message.content.strip()
@@ -216,8 +225,8 @@ async def handle_chat(client: Client, message: Message):
 
     except Exception as e:
         print(f"Error: {e}")
-        await message.reply_text("Oops! Network chala gaya. Ek min ruko 🥺")
+        await message.reply_text("Oops! Network thoda slow hai, ek minute ruko please. 🥺")
 
 if __name__ == "__main__":
-    print("Deepsikha is starting with polite language and group support...")
+    print("Deepsikha is starting with sensible 70B brain and fixed commands...")
     app.run()
