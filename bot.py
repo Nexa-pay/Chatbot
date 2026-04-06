@@ -13,7 +13,7 @@ except RuntimeError:
 # --------------------------------------------
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardRemove
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -107,6 +107,14 @@ async def group_tracker(client, message):
     )
 
 # ====================================================================
+# UTILITY COMMAND: CLEAR STUCK KEYBOARDS
+# ====================================================================
+@app.on_message(filters.command("clear") & filters.private)
+async def clear_cmd(client, message):
+    # This magically deletes that ugly bottom menu stuck on your screen
+    await message.reply_text("✅ Stuck bottom menu cleared! Type /start again.", reply_markup=ReplyKeyboardRemove())
+
+# ====================================================================
 # START MENU (AUTO-OPENS OWNER PANEL FOR AAKASH)
 # ====================================================================
 
@@ -118,7 +126,7 @@ async def start_cmd(client, message):
     bot = await client.get_me()
     add_link = f"https://t.me/{bot.username}?startgroup=true"
     
-    # Send the Welcome Message first
+    # Exact replica of the Start layout
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 Groups", url=settings['link_groups']),
          InlineKeyboardButton("👑 Owner", url=settings['link_owner'])],
@@ -322,15 +330,24 @@ async def broadcast_cmd(client, message):
 
 
 # ====================================================================
-# BAKA-STYLE CHAT AI HANDLER (UNCHANGED)
+# BAKA-STYLE CHAT AI HANDLER 
 # ====================================================================
-@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin"]))
+@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin", "clear"]))
 async def handle_chat(client: Client, message: Message):
-    is_group = message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]
-    if is_group:
-        bot_me = await client.get_me()
-        if "deepsikha" not in message.text.lower() and not (message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id):
-            return
+    
+    # --- BULLETPROOF GROUP CHAT LOGIC ---
+    if message.chat.type != enums.ChatType.PRIVATE:
+        # If the message is in a group, it MUST contain 'deepsikha' 
+        # OR be a direct reply to the bot itself. Otherwise, ignore it.
+        text_lower = message.text.lower() if message.text else ""
+        is_reply_to_bot = False
+        
+        if message.reply_to_message and message.reply_to_message.from_user:
+            if message.reply_to_message.from_user.is_self:
+                is_reply_to_bot = True
+                
+        if "deepsikha" not in text_lower and not is_reply_to_bot:
+            return # Ignore message, prevent auto-bombardment
 
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
@@ -377,5 +394,5 @@ async def handle_chat(client: Client, message: Message):
     except Exception: pass
 
 if __name__ == "__main__":
-    print("Deepsikha is running with Auto-Open Owner Panel...")
+    print("Deepsikha is running with Fixed Groups & Inline Panels...")
     app.run()
