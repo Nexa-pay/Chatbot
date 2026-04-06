@@ -17,12 +17,12 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# --- Dummy Web Server ---
+# --- Dummy Web Server to keep Render alive ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Deepsikha is running with Advanced Panel!"
+    return "Deepsikha is awake and running!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -54,6 +54,7 @@ settings_col = db["settings"]
 # DATABASE HELPERS
 # ====================================================================
 
+# Initialize settings with default values if not exists
 async def get_settings():
     s = await settings_col.find_one({"_id": "bot_config"})
     if not s:
@@ -75,11 +76,15 @@ async def get_settings():
 async def get_user_profile(user_id, first_name):
     if not first_name:
         first_name = "Dost" 
+        
     user = await users_col.find_one({"user_id": user_id})
     if not user:
         user = {
-            "user_id": user_id, "name": first_name, "interactions": 0,
-            "history": [], "joined_at": datetime.now()
+            "user_id": user_id,
+            "name": first_name,
+            "interactions": 0,
+            "history": [], 
+            "joined_at": datetime.now()
         }
         await users_col.insert_one(user)
     return user
@@ -91,14 +96,17 @@ async def update_user_memory(user_id, user_msg, ai_reply):
             "$inc": {"interactions": 1},
             "$push": {
                 "history": {
-                    "$each": [{"role": "user", "content": user_msg}, {"role": "assistant", "content": ai_reply}],
-                    "$slice": -6
+                    "$each": [
+                        {"role": "user", "content": user_msg},
+                        {"role": "assistant", "content": ai_reply}
+                    ],
+                    "$slice": -8
                 }
             }
         }
     )
 
-# Track Groups in Background
+# Automatically track Groups the bot is in
 @app.on_message(filters.group, group=-1)
 async def group_tracker(client, message):
     await groups_col.update_one(
@@ -108,7 +116,7 @@ async def group_tracker(client, message):
     )
 
 # ====================================================================
-# START MENU & INLINE BUTTONS
+# START MENU & INLINE BUTTONS (IMAGE INSPIRED)
 # ====================================================================
 
 @app.on_message(filters.command("start") & filters.private)
@@ -137,12 +145,13 @@ async def start_cmd(client, message):
         else:
             await message.reply_text(settings["welcome_text"], reply_markup=keyboard)
     except Exception as e:
+        print(f"Start reply media error: {e}")
         # Fallback if media gets deleted from Telegram servers
         await message.reply_text(settings["welcome_text"], reply_markup=keyboard)
 
 
 # ====================================================================
-# ADMIN & OWNER PANEL
+# ADMIN & OWNER PANEL (Owner ID used for check)
 # ====================================================================
 
 @app.on_message(filters.command("panel") & filters.private)
@@ -160,11 +169,13 @@ async def panel_cmd(client, message):
          InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast")]
     ]
     
+    # Only show owner panel button to the actual owner
     if is_owner:
         buttons.append([InlineKeyboardButton("👑 Owner Panel", callback_data="pnl_owner")])
         
     await message.reply_text("⚙️ **Bot Control Panel**\nSelect an option below:", reply_markup=InlineKeyboardMarkup(buttons))
 
+# --- SECRET ADMIN PANEL & OWNER PANEL HANDLING ---
 @app.on_callback_query(filters.regex("^pnl_"))
 async def panel_callbacks(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
@@ -190,29 +201,26 @@ async def panel_callbacks(client, callback_query: CallbackQuery):
         await callback_query.edit_message_text(text)
         
     elif data == "pnl_broadcast":
-        await callback_query.edit_message_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, or Video) and type `/broadcast`.\nBoth Admins and Owner can do this.")
+        await callback_query.edit_message_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, Video, Document) with caption, and type `/broadcast`.\nBoth Admins and Owner can do this.")
         
     elif data == "pnl_owner":
         if not is_owner:
-            await callback_query.answer("Only the Bot Owner can access this!", show_alert=True)
+            await callback_query.answer("Only Aakash can access this!", show_alert=True)
             return
             
         owner_text = """
 👑 **OWNER PANEL INSTRUCTIONS** 👑
 
-**1. Edit Welcome Message (Supports Media):**
-Send a Photo, Video, or Text. Reply to it with: `/setwelcome`
+**1. Edit Welcome Message (Supports Photo/Video with caption):**
+Send your beautiful photo, video, or just text. Add your caption. Then, **REPLY** to that message and type: `/setwelcome`
 
 **2. Manage Admins:**
-`/addadmin <user_id>`
-`/deladmin <user_id>`
+`/addadmin <user_id>` (Adds a new admin)
+`/deladmin <user_id>` (Removes an admin)
 
 **3. Edit Button Links:**
-`/setlink groups <url>`
-`/setlink owner <url>`
-`/setlink friends <url>`
-`/setlink games <url>`
-`/setlink support <url>`
+`/setlink <button_target> <url>`
+Targets: `groups`, `owner`, `friends`, `games`, `support`
 
 **4. Database Logs:**
 `/dblogs` (Shows all Groups & IDs)
@@ -220,14 +228,16 @@ Send a Photo, Video, or Text. Reply to it with: `/setwelcome`
         await callback_query.edit_message_text(owner_text)
 
 # ====================================================================
-# OWNER COMMANDS (SETTINGS & CONFIG)
+# OWNER-ONLY SETTINGS COMMANDS (ADMINS CANT ACCESS)
 # ====================================================================
 
 @app.on_message(filters.command("setwelcome") & filters.private)
 async def set_welcome_cmd(client, message):
-    if message.from_user.id != OWNER_ID: return
+    if message.from_user.id != OWNER_ID:
+        return
+        
     if not message.reply_to_message:
-        await message.reply("⚠️ Reply to a message (Text, Photo, or Video) with /setwelcome")
+        await message.reply("⚠️ You must reply to a message to set it as welcome. Reply to a Photo or Video with caption, or just text.")
         return
         
     rep = message.reply_to_message
@@ -247,11 +257,13 @@ async def set_welcome_cmd(client, message):
         {"$set": {"welcome_text": text, "welcome_media": media_id, "welcome_media_type": media_type}},
         upsert=True
     )
-    await message.reply("✅ New Welcome Message Saved!")
+    await message.reply("✅ New Welcome Message Saved and Deployed!")
 
 @app.on_message(filters.command("setlink") & filters.private)
 async def set_link_cmd(client, message):
-    if message.from_user.id != OWNER_ID: return
+    if message.from_user.id != OWNER_ID:
+        return
+        
     args = message.text.split(maxsplit=2)
     if len(args) < 3:
         await message.reply("Usage: `/setlink <groups/owner/friends/games/support> <url>`")
@@ -262,86 +274,94 @@ async def set_link_cmd(client, message):
     
     valid_targets = ["groups", "owner", "friends", "games", "support"]
     if button_target not in valid_targets:
-        await message.reply(f"Invalid target. Choose from: {', '.join(valid_targets)}")
+        await message.reply(f"Invalid target. Please choose from: {', '.join(valid_targets)}")
         return
         
     await settings_col.update_one(
         {"_id": "bot_config"},
-        {"$set": {f"link_{button_target}": new_url}}
+        {"$set": {f"link_{button_target}": new_url}},
+        upsert=True
     )
-    await message.reply(f"✅ {button_target.capitalize()} link updated to:\n{new_url}")
+    await message.reply(f"✅ The '{button_target.capitalize()}' link has been updated to:\n{new_url}")
 
 @app.on_message(filters.command("addadmin") & filters.private)
 async def add_admin_cmd(client, message):
-    if message.from_user.id != OWNER_ID: return
+    if message.from_user.id != OWNER_ID:
+        return
     try:
         new_admin = int(message.text.split()[1])
         await settings_col.update_one({"_id": "bot_config"}, {"$addToSet": {"admins": new_admin}})
         await message.reply(f"✅ Admin {new_admin} added successfully.")
-    except:
-        await message.reply("Usage: `/addadmin <user_id>`")
+    except Exception as e:
+        await message.reply("Usage: `/addadmin <user_id>` (numeric ID only)")
 
 @app.on_message(filters.command("deladmin") & filters.private)
 async def del_admin_cmd(client, message):
-    if message.from_user.id != OWNER_ID: return
+    if message.from_user.id != OWNER_ID:
+        return
     try:
         old_admin = int(message.text.split()[1])
         await settings_col.update_one({"_id": "bot_config"}, {"$pull": {"admins": old_admin}})
-        await message.reply(f"✅ Admin {old_admin} removed.")
-    except:
+        await message.reply(f"✅ Admin {old_admin} removed from database.")
+    except Exception as e:
         await message.reply("Usage: `/deladmin <user_id>`")
 
 @app.on_message(filters.command("dblogs") & filters.private)
 async def dblogs_cmd(client, message):
-    if message.from_user.id != OWNER_ID: return
+    if message.from_user.id != OWNER_ID:
+        return
+        
     groups = await groups_col.find().to_list(length=None)
     total_u = await users_col.count_documents({})
     
     log_text = f"📂 **DATABASE LOGS**\n\nTotal Users: {total_u}\nTotal Groups: {len(groups)}\n\n**Groups List:**\n"
     for g in groups:
-        log_text += f"▪️ {g.get('title', 'Unknown')} (ID: `{g['chat_id']}`)\n"
+        log_text += f"▪️ {g.get('title', 'Unknown Title')} (ID: `{g['chat_id']}`)\n"
         
-    # Telegram allows max 4096 chars per message
+    # Telegram allows max 4096 chars per message, we truncate if longer
     if len(log_text) > 4000:
         log_text = log_text[:4000] + "...\n[Message too long, truncated]"
         
     await message.reply(log_text)
 
 # ====================================================================
-# BROADCAST COMMAND (ADMINS & OWNER - SUPPORTS MEDIA)
+# BROADCAST COMMAND (ADMINS & OWNER - SUPPORTS ALL MEDIA)
 # ====================================================================
 
 @app.on_message(filters.command("broadcast") & filters.private)
 async def broadcast_cmd(client, message):
     settings = await get_settings()
     user_id = message.from_user.id
+    
+    # Permission check: Owner or in Admin list
     if user_id != OWNER_ID and user_id not in settings.get("admins", []):
         return
         
     if not message.reply_to_message:
-        await message.reply("⚠️ Reply to a message (Text, Photo, or Video) to broadcast it.")
+        await message.reply("⚠️ You must reply to a message to broadcast it. Works with Text, Photos, Videos, Documents.")
         return
         
     users = await users_col.find().to_list(length=None)
     sent = 0
-    msg = await message.reply_text("🚀 Broadcasting...")
+    msg = await message.reply_text("🚀 Broadcasting is in progress...")
     
     for u in users:
         try:
-            # .copy() ensures photos/videos are sent flawlessly
+            # copy_message automatically handles text, photo, video, document, etc. with caption flawlessly
             await message.reply_to_message.copy(u['user_id'])
             sent += 1
-            await asyncio.sleep(0.1) 
-        except Exception:
-            pass # Skips users who blocked the bot
+            await asyncio.sleep(0.1) # Prevents Telegram from blocking the bot for flood
+        except Exception as e:
+            # We ignore exceptions (e.g., if a user blocked the bot)
+            pass 
             
-    await msg.edit_text(f"✅ Broadcast complete!\nSent to {sent} users.")
+    await msg.edit_text(f"✅ Broadcast complete!\nSent flawlessly to {sent} users.")
 
 
 # ====================================================================
 # BAKA-STYLE CHAT AI HANDLER (UNCHANGED)
 # ====================================================================
-@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin", "dblogs"]))
+@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin", "dblogs", "owner"]))
 async def handle_chat(client: Client, message: Message):
     
     is_group = message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]
@@ -351,11 +371,13 @@ async def handle_chat(client: Client, message: Message):
         text_lower = message.text.lower()
         is_reply_to_me = message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id
         
+        # In groups: ONLY reply if "deepsikha" is in the text OR if they replied to her
         if "deepsikha" not in text_lower and not is_reply_to_me:
             return
 
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
+    # THE PERFECT BAKA PROMPT - UNTOUCHED
     SYSTEM_PROMPT = f"""
     You are Deepsikha, a normal Indian girl chatting casually on Telegram.
     
@@ -383,13 +405,16 @@ async def handle_chat(client: Client, message: Message):
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
     
+    # Load last message for context
     for msg in user.get("history", []):
         messages_payload.append({"role": msg["role"], "content": msg["content"]})
         
+    # Current message
     messages_payload.append({"role": "user", "content": message.text})
 
     try:
         try:
+            # Showing "typing..." status is fixed
             await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
         except Exception:
             pass
@@ -408,8 +433,9 @@ async def handle_chat(client: Client, message: Message):
         await update_user_memory(message.from_user.id, message.text, ai_reply)
 
     except Exception as e:
+        # Ignore errors so chat never fails
         pass
 
 if __name__ == "__main__":
-    print("Deepsikha is running with Baka AI & Full Control Panel...")
+    print("Deepsikha is starting with Baka AI and Advanced Control Panel...")
     app.run()
