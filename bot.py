@@ -116,7 +116,7 @@ async def group_tracker(client, message):
     )
 
 # ====================================================================
-# START MENU & INLINE BUTTONS (IMAGE INSPIRED)
+# START MENU & INLINE BUTTONS (PRO LAYOUT)
 # ====================================================================
 
 @app.on_message(filters.command("start") & filters.private)
@@ -127,13 +127,21 @@ async def start_cmd(client, message):
     bot = await client.get_me()
     add_link = f"https://t.me/{bot.username}?startgroup=true"
     
-    # Building the beautiful inline keyboard based on your image
+    # Beautiful structured layout (Full width + Half width)
     keyboard = InlineKeyboardMarkup([
+        # Row 1: Full Width
+        [InlineKeyboardButton("➕ ADD ME TO YOUR GROUP ➕", url=add_link)],
+        
+        # Row 2: Half Width
         [InlineKeyboardButton("👥 Groups", url=settings['link_groups']),
          InlineKeyboardButton("🥀 Owner", url=settings['link_owner'])],
+         
+        # Row 3: Half Width
         [InlineKeyboardButton("🧸 Friends", url=settings['link_friends']),
          InlineKeyboardButton("🎮 Games", url=settings['link_games'])],
-        [InlineKeyboardButton("➕ ADD ME TO YOUR GROUP 👥", url=add_link)]
+         
+        # Row 4: Full Width
+        [InlineKeyboardButton("🆘 Support", url=settings['link_support'])]
     ])
     
     try:
@@ -164,14 +172,15 @@ async def panel_cmd(client, message):
     if not (is_owner or is_admin):
         return # Ignore normal users
         
+    # Vertical List Layout for Admin Panel
     buttons = [
-        [InlineKeyboardButton("📊 Stats", callback_data="pnl_stats"),
-         InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast")]
+        [InlineKeyboardButton("📊 Bot Statistics", callback_data="pnl_stats")],
+        [InlineKeyboardButton("📢 Broadcast Message", callback_data="pnl_broadcast")]
     ]
     
     # Only show owner panel button to the actual owner
     if is_owner:
-        buttons.append([InlineKeyboardButton("👑 Owner Panel", callback_data="pnl_owner")])
+        buttons.append([InlineKeyboardButton("👑 Owner Control Panel", callback_data="pnl_owner")])
         
     await message.reply_text("⚙️ **Bot Control Panel**\nSelect an option below:", reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -318,7 +327,6 @@ async def dblogs_cmd(client, message):
     for g in groups:
         log_text += f"▪️ {g.get('title', 'Unknown Title')} (ID: `{g['chat_id']}`)\n"
         
-    # Telegram allows max 4096 chars per message, we truncate if longer
     if len(log_text) > 4000:
         log_text = log_text[:4000] + "...\n[Message too long, truncated]"
         
@@ -333,7 +341,6 @@ async def broadcast_cmd(client, message):
     settings = await get_settings()
     user_id = message.from_user.id
     
-    # Permission check: Owner or in Admin list
     if user_id != OWNER_ID and user_id not in settings.get("admins", []):
         return
         
@@ -347,12 +354,10 @@ async def broadcast_cmd(client, message):
     
     for u in users:
         try:
-            # copy_message automatically handles text, photo, video, document, etc. with caption flawlessly
             await message.reply_to_message.copy(u['user_id'])
             sent += 1
-            await asyncio.sleep(0.1) # Prevents Telegram from blocking the bot for flood
+            await asyncio.sleep(0.1) 
         except Exception as e:
-            # We ignore exceptions (e.g., if a user blocked the bot)
             pass 
             
     await msg.edit_text(f"✅ Broadcast complete!\nSent flawlessly to {sent} users.")
@@ -371,13 +376,11 @@ async def handle_chat(client: Client, message: Message):
         text_lower = message.text.lower()
         is_reply_to_me = message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id
         
-        # In groups: ONLY reply if "deepsikha" is in the text OR if they replied to her
         if "deepsikha" not in text_lower and not is_reply_to_me:
             return
 
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
-    # THE PERFECT BAKA PROMPT - UNTOUCHED
     SYSTEM_PROMPT = f"""
     You are Deepsikha, a normal Indian girl chatting casually on Telegram.
     
@@ -405,16 +408,13 @@ async def handle_chat(client: Client, message: Message):
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
     
-    # Load last message for context
     for msg in user.get("history", []):
         messages_payload.append({"role": msg["role"], "content": msg["content"]})
         
-    # Current message
     messages_payload.append({"role": "user", "content": message.text})
 
     try:
         try:
-            # Showing "typing..." status is fixed
             await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
         except Exception:
             pass
@@ -433,9 +433,8 @@ async def handle_chat(client: Client, message: Message):
         await update_user_memory(message.from_user.id, message.text, ai_reply)
 
     except Exception as e:
-        # Ignore errors so chat never fails
         pass
 
 if __name__ == "__main__":
-    print("Deepsikha is starting with Baka AI and Advanced Control Panel...")
+    print("Deepsikha is starting with Database logic and structured layout...")
     app.run()
