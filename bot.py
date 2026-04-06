@@ -13,7 +13,7 @@ except RuntimeError:
 # --------------------------------------------
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardRemove
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from groq import Groq
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -22,7 +22,7 @@ web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Deepsikha is awake with Advanced Control Panel!"
+    return "Deepsikha is awake with Bottom Menu Panel!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -107,27 +107,27 @@ async def group_tracker(client, message):
     )
 
 # ====================================================================
-# UTILITY COMMAND: CLEAR STUCK KEYBOARDS
+# START MENU & BOTTOM KEYBOARD
 # ====================================================================
-@app.on_message(filters.command("clear") & filters.private)
-async def clear_cmd(client, message):
-    # This magically deletes that ugly bottom menu stuck on your screen
-    await message.reply_text("✅ Stuck bottom menu cleared! Type /start again.", reply_markup=ReplyKeyboardRemove())
 
-# ====================================================================
-# START MENU (AUTO-OPENS OWNER PANEL FOR AAKASH)
-# ====================================================================
+def get_admin_bottom_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📢 Broadcast"), KeyboardButton("📊 Stats")],
+            [KeyboardButton("📞 Contact Admin"), KeyboardButton("👑 Owner Panel")]
+        ],
+        resize_keyboard=True
+    )
 
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     await get_user_profile(message.from_user.id, message.from_user.first_name)
     settings = await get_settings()
-    
     bot = await client.get_me()
     add_link = f"https://t.me/{bot.username}?startgroup=true"
     
-    # Exact replica of the Start layout
-    keyboard = InlineKeyboardMarkup([
+    # 1. Send the Welcome Message with Inline Links
+    inline_kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 Groups", url=settings['link_groups']),
          InlineKeyboardButton("👑 Owner", url=settings['link_owner'])],
         [InlineKeyboardButton("🧸 Friends", url=settings['link_friends']),
@@ -138,59 +138,79 @@ async def start_cmd(client, message):
     try:
         if settings.get("welcome_media"):
             if settings["welcome_media_type"] == "photo":
-                await message.reply_photo(settings["welcome_media"], caption=settings["welcome_text"], reply_markup=keyboard)
+                await message.reply_photo(settings["welcome_media"], caption=settings["welcome_text"], reply_markup=inline_kb)
             elif settings["welcome_media_type"] == "video":
-                await message.reply_video(settings["welcome_media"], caption=settings["welcome_text"], reply_markup=keyboard)
+                await message.reply_video(settings["welcome_media"], caption=settings["welcome_text"], reply_markup=inline_kb)
         else:
-            await message.reply_text(settings["welcome_text"], reply_markup=keyboard)
+            await message.reply_text(settings["welcome_text"], reply_markup=inline_kb)
     except Exception:
-        await message.reply_text(settings["welcome_text"], reply_markup=keyboard)
+        await message.reply_text(settings["welcome_text"], reply_markup=inline_kb)
 
-    # --- AUTO-OPEN OWNER PANEL IF USER IS AAKASH ---
-    if message.from_user.id == OWNER_ID:
-        owner_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚙️ Welcome Msg", callback_data="own_welcome"),
-             InlineKeyboardButton("🔗 Change Links", callback_data="own_links")],
-            [InlineKeyboardButton("💳 UPI ID", callback_data="own_upi"),
-             InlineKeyboardButton("📞 Contacts", callback_data="own_contacts")],
-            [InlineKeyboardButton("👥 Add Admin", callback_data="own_addadmin"),
-             InlineKeyboardButton("🚫 Remove Admin", callback_data="own_deladmin")],
-            [InlineKeyboardButton("🔨 Ban User", callback_data="own_ban"),
-             InlineKeyboardButton("🕊️ Unban User", callback_data="own_unban")],
-            [InlineKeyboardButton("📊 Stats", callback_data="pnl_stats"),
-             InlineKeyboardButton("💾 Logs (Owner)", callback_data="own_logs")],
-            [InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast"),
-             InlineKeyboardButton("❌ Close", callback_data="own_close")]
-        ])
-        await message.reply_text("✨ **Advanced Control Panel:**", reply_markup=owner_keyboard)
+    # 2. Attach the Bottom Keyboard if user is Owner/Admin
+    if message.from_user.id == OWNER_ID or message.from_user.id in settings.get("admins", []):
+        await message.reply_text("👇 Admin Menu Unlocked:", reply_markup=get_admin_bottom_keyboard())
 
 
 # ====================================================================
-# ADVANCED CONTROL PANEL COMMAND (/panel)
+# BOTTOM KEYBOARD BUTTON HANDLERS
 # ====================================================================
 
-@app.on_message(filters.command("panel") & filters.private)
-async def panel_cmd(client, message):
-    user_id = message.from_user.id
-    settings = await get_settings()
-    is_owner = (user_id == OWNER_ID)
-    is_admin = (user_id in settings.get("admins", []))
-    
-    if not (is_owner or is_admin):
-        return 
+@app.on_message(filters.regex("^👑 Owner Panel$") & filters.private)
+async def owner_panel_text(client, message):
+    if message.from_user.id != OWNER_ID:
+        await message.reply_text("⚠️ Only Aakash can access the Owner Panel!")
+        return
         
-    buttons = [
+    owner_inline_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚙️ Welcome Msg", callback_data="own_welcome"),
+         InlineKeyboardButton("🔗 Change Links", callback_data="own_links")],
+        [InlineKeyboardButton("💳 UPI ID", callback_data="own_upi"),
+         InlineKeyboardButton("📞 Contacts", callback_data="own_contacts")],
+        [InlineKeyboardButton("👥 Add Admin", callback_data="own_addadmin"),
+         InlineKeyboardButton("🚫 Remove Admin", callback_data="own_deladmin")],
+        [InlineKeyboardButton("🔨 Ban User", callback_data="own_ban"),
+         InlineKeyboardButton("🕊️ Unban User", callback_data="own_unban")],
+        [InlineKeyboardButton("📊 Stats", callback_data="pnl_stats"),
+         InlineKeyboardButton("💾 Logs (Owner)", callback_data="own_logs")],
         [InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast"),
-         InlineKeyboardButton("📊 Stats", callback_data="pnl_stats")],
-        [InlineKeyboardButton("📞 Contact Admin", url=settings['link_support'])]
-    ]
-    
-    if is_owner:
-        buttons[1].append(InlineKeyboardButton("👑 Owner Panel", callback_data="pnl_owner"))
-    else:
-        buttons[1].append(InlineKeyboardButton("❌ Close", callback_data="own_close"))
+         InlineKeyboardButton("❌ Close", callback_data="own_close")]
+    ])
+    await message.reply_text("✨ **Advanced Control Panel:**", reply_markup=owner_inline_kb)
+
+
+@app.on_message(filters.regex("^📊 Stats$") & filters.private)
+async def stats_text(client, message):
+    settings = await get_settings()
+    if message.from_user.id != OWNER_ID and message.from_user.id not in settings.get("admins", []):
+        return
         
-    await message.reply_text("⚙️ **Bot Control Panel**", reply_markup=InlineKeyboardMarkup(buttons))
+    total_u = await users_col.count_documents({})
+    active_u = await users_col.count_documents({"interactions": {"$gt": 0}})
+    total_g = await groups_col.count_documents({})
+    top_users = await users_col.find().sort("interactions", -1).limit(5).to_list(length=5)
+    lb_text = "\n".join([f"{i+1}. {u['name']} ({u['interactions']} msgs)" for i, u in enumerate(top_users)])
+    text = f"📊 **BOT STATS**\n\n👤 Total Users: {total_u}\n🔥 Active Users: {active_u}\n👥 Total Groups: {total_g}\n\n🏆 **Leaderboard:**\n{lb_text}"
+    await message.reply_text(text)
+
+
+@app.on_message(filters.regex("^📢 Broadcast$") & filters.private)
+async def broadcast_text(client, message):
+    settings = await get_settings()
+    if message.from_user.id != OWNER_ID and message.from_user.id not in settings.get("admins", []):
+        return
+    await message.reply_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, Video, Document) with caption, and type `/broadcast`.")
+
+
+@app.on_message(filters.regex("^📞 Contact Admin$") & filters.private)
+async def contact_admin_text(client, message):
+    settings = await get_settings()
+    link = settings.get("link_support", "https://t.me/Aakash")
+    await message.reply_text(f"📞 Contact the Admin here:\n{link}")
+
+
+# ====================================================================
+# INLINE CALLBACK HANDLERS (For the 12-button menu)
+# ====================================================================
 
 @app.on_callback_query(filters.regex("^(pnl_|own_)"))
 async def panel_callbacks(client, callback_query: CallbackQuery):
@@ -204,7 +224,7 @@ async def panel_callbacks(client, callback_query: CallbackQuery):
         return
 
     data = callback_query.data
-    
+
     if data == "pnl_stats":
         total_u = await users_col.count_documents({})
         active_u = await users_col.count_documents({"interactions": {"$gt": 0}})
@@ -215,28 +235,7 @@ async def panel_callbacks(client, callback_query: CallbackQuery):
         await callback_query.edit_message_text(text)
         
     elif data == "pnl_broadcast":
-        await callback_query.edit_message_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, Video, Document) with caption, and type `/broadcast`.")
-
-    elif data == "pnl_owner":
-        if not is_owner:
-            await callback_query.answer("Only Aakash can access this!", show_alert=True)
-            return
-            
-        owner_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚙️ Welcome Msg", callback_data="own_welcome"),
-             InlineKeyboardButton("🔗 Change Links", callback_data="own_links")],
-            [InlineKeyboardButton("💳 UPI ID", callback_data="own_upi"),
-             InlineKeyboardButton("📞 Contacts", callback_data="own_contacts")],
-            [InlineKeyboardButton("👥 Add Admin", callback_data="own_addadmin"),
-             InlineKeyboardButton("🚫 Remove Admin", callback_data="own_deladmin")],
-            [InlineKeyboardButton("🔨 Ban User", callback_data="own_ban"),
-             InlineKeyboardButton("🕊️ Unban User", callback_data="own_unban")],
-            [InlineKeyboardButton("📊 Stats", callback_data="pnl_stats"),
-             InlineKeyboardButton("💾 Logs (Owner)", callback_data="own_logs")],
-            [InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast"),
-             InlineKeyboardButton("❌ Close", callback_data="own_close")]
-        ])
-        await callback_query.edit_message_text("✨ **Advanced Control Panel:**", reply_markup=owner_keyboard)
+        await callback_query.edit_message_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, Video) and type `/broadcast`.")
 
     elif data == "own_welcome":
         await callback_query.answer("Reply to a Photo/Video/Text with /setwelcome to change it!", show_alert=True)
@@ -330,15 +329,17 @@ async def broadcast_cmd(client, message):
 
 
 # ====================================================================
-# BAKA-STYLE CHAT AI HANDLER 
+# BAKA-STYLE CHAT AI HANDLER
 # ====================================================================
-@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin", "clear"]))
+@app.on_message(filters.text & ~filters.command(["start", "setwelcome", "setlink", "addadmin", "deladmin"]))
 async def handle_chat(client: Client, message: Message):
     
+    # Ignore bottom keyboard inputs going to the AI
+    if message.text in ["👑 Owner Panel", "📊 Stats", "📢 Broadcast", "📞 Contact Admin"]:
+        return
+
     # --- BULLETPROOF GROUP CHAT LOGIC ---
     if message.chat.type != enums.ChatType.PRIVATE:
-        # If the message is in a group, it MUST contain 'deepsikha' 
-        # OR be a direct reply to the bot itself. Otherwise, ignore it.
         text_lower = message.text.lower() if message.text else ""
         is_reply_to_bot = False
         
@@ -347,7 +348,7 @@ async def handle_chat(client: Client, message: Message):
                 is_reply_to_bot = True
                 
         if "deepsikha" not in text_lower and not is_reply_to_bot:
-            return # Ignore message, prevent auto-bombardment
+            return 
 
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
     
@@ -394,5 +395,5 @@ async def handle_chat(client: Client, message: Message):
     except Exception: pass
 
 if __name__ == "__main__":
-    print("Deepsikha is running with Fixed Groups & Inline Panels...")
+    print("Deepsikha is running with Bottom Menu Panel...")
     app.run()
