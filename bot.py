@@ -22,7 +22,7 @@ web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Deepsikha is awake and running!"
+    return "Deepsikha is awake with Advanced Control Panel!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -54,14 +54,13 @@ settings_col = db["settings"]
 # DATABASE HELPERS
 # ====================================================================
 
-# Initialize settings with default values if not exists
 async def get_settings():
     s = await settings_col.find_one({"_id": "bot_config"})
     if not s:
         s = {
             "_id": "bot_config",
             "admins": [],
-            "welcome_text": "😊 Hieeeee\n😉 You're Talking To Deepsikha, A Sassy Cutie Girl.\n\n💕 Choose An Option Below :",
+            "welcome_text": "😊 Hieeeee\n😉 You're Talking To Deepsikha , A sobo Cutie Girl.\n\n💕 Choose An Option Below :",
             "welcome_media": None,
             "welcome_media_type": None,
             "link_groups": "https://t.me/telegram",
@@ -76,15 +75,11 @@ async def get_settings():
 async def get_user_profile(user_id, first_name):
     if not first_name:
         first_name = "Dost" 
-        
     user = await users_col.find_one({"user_id": user_id})
     if not user:
         user = {
-            "user_id": user_id,
-            "name": first_name,
-            "interactions": 0,
-            "history": [], 
-            "joined_at": datetime.now()
+            "user_id": user_id, "name": first_name, "interactions": 0,
+            "history": [], "joined_at": datetime.now()
         }
         await users_col.insert_one(user)
     return user
@@ -96,17 +91,13 @@ async def update_user_memory(user_id, user_msg, ai_reply):
             "$inc": {"interactions": 1},
             "$push": {
                 "history": {
-                    "$each": [
-                        {"role": "user", "content": user_msg},
-                        {"role": "assistant", "content": ai_reply}
-                    ],
+                    "$each": [{"role": "user", "content": user_msg}, {"role": "assistant", "content": ai_reply}],
                     "$slice": -8
                 }
             }
         }
     )
 
-# Automatically track Groups the bot is in
 @app.on_message(filters.group, group=-1)
 async def group_tracker(client, message):
     await groups_col.update_one(
@@ -116,7 +107,7 @@ async def group_tracker(client, message):
     )
 
 # ====================================================================
-# START MENU & INLINE BUTTONS (PRO LAYOUT)
+# START MENU (AUTO-OPENS OWNER PANEL FOR AAKASH)
 # ====================================================================
 
 @app.on_message(filters.command("start") & filters.private)
@@ -127,21 +118,13 @@ async def start_cmd(client, message):
     bot = await client.get_me()
     add_link = f"https://t.me/{bot.username}?startgroup=true"
     
-    # Beautiful structured layout (Full width + Half width)
+    # Send the Welcome Message first
     keyboard = InlineKeyboardMarkup([
-        # Row 1: Full Width
-        [InlineKeyboardButton("➕ ADD ME TO YOUR GROUP ➕", url=add_link)],
-        
-        # Row 2: Half Width
         [InlineKeyboardButton("👥 Groups", url=settings['link_groups']),
-         InlineKeyboardButton("🥀 Owner", url=settings['link_owner'])],
-         
-        # Row 3: Half Width
+         InlineKeyboardButton("👑 Owner", url=settings['link_owner'])],
         [InlineKeyboardButton("🧸 Friends", url=settings['link_friends']),
          InlineKeyboardButton("🎮 Games", url=settings['link_games'])],
-         
-        # Row 4: Full Width
-        [InlineKeyboardButton("🆘 Support", url=settings['link_support'])]
+        [InlineKeyboardButton("➕ ADD ME TO YOUR GROUP 👥", url=add_link)]
     ])
     
     try:
@@ -152,14 +135,30 @@ async def start_cmd(client, message):
                 await message.reply_video(settings["welcome_media"], caption=settings["welcome_text"], reply_markup=keyboard)
         else:
             await message.reply_text(settings["welcome_text"], reply_markup=keyboard)
-    except Exception as e:
-        print(f"Start reply media error: {e}")
-        # Fallback if media gets deleted from Telegram servers
+    except Exception:
         await message.reply_text(settings["welcome_text"], reply_markup=keyboard)
+
+    # --- AUTO-OPEN OWNER PANEL IF USER IS AAKASH ---
+    if message.from_user.id == OWNER_ID:
+        owner_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ Welcome Msg", callback_data="own_welcome"),
+             InlineKeyboardButton("🔗 Change Links", callback_data="own_links")],
+            [InlineKeyboardButton("💳 UPI ID", callback_data="own_upi"),
+             InlineKeyboardButton("📞 Contacts", callback_data="own_contacts")],
+            [InlineKeyboardButton("👥 Add Admin", callback_data="own_addadmin"),
+             InlineKeyboardButton("🚫 Remove Admin", callback_data="own_deladmin")],
+            [InlineKeyboardButton("🔨 Ban User", callback_data="own_ban"),
+             InlineKeyboardButton("🕊️ Unban User", callback_data="own_unban")],
+            [InlineKeyboardButton("📊 Stats", callback_data="pnl_stats"),
+             InlineKeyboardButton("💾 Logs (Owner)", callback_data="own_logs")],
+            [InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast"),
+             InlineKeyboardButton("❌ Close", callback_data="own_close")]
+        ])
+        await message.reply_text("✨ **Advanced Control Panel:**", reply_markup=owner_keyboard)
 
 
 # ====================================================================
-# ADMIN & OWNER PANEL (Owner ID used for check)
+# ADVANCED CONTROL PANEL COMMAND (/panel)
 # ====================================================================
 
 @app.on_message(filters.command("panel") & filters.private)
@@ -170,22 +169,22 @@ async def panel_cmd(client, message):
     is_admin = (user_id in settings.get("admins", []))
     
     if not (is_owner or is_admin):
-        return # Ignore normal users
+        return 
         
-    # Vertical List Layout for Admin Panel
     buttons = [
-        [InlineKeyboardButton("📊 Bot Statistics", callback_data="pnl_stats")],
-        [InlineKeyboardButton("📢 Broadcast Message", callback_data="pnl_broadcast")]
+        [InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast"),
+         InlineKeyboardButton("📊 Stats", callback_data="pnl_stats")],
+        [InlineKeyboardButton("📞 Contact Admin", url=settings['link_support'])]
     ]
     
-    # Only show owner panel button to the actual owner
     if is_owner:
-        buttons.append([InlineKeyboardButton("👑 Owner Control Panel", callback_data="pnl_owner")])
+        buttons[1].append(InlineKeyboardButton("👑 Owner Panel", callback_data="pnl_owner"))
+    else:
+        buttons[1].append(InlineKeyboardButton("❌ Close", callback_data="own_close"))
         
-    await message.reply_text("⚙️ **Bot Control Panel**\nSelect an option below:", reply_markup=InlineKeyboardMarkup(buttons))
+    await message.reply_text("⚙️ **Bot Control Panel**", reply_markup=InlineKeyboardMarkup(buttons))
 
-# --- SECRET ADMIN PANEL & OWNER PANEL HANDLING ---
-@app.on_callback_query(filters.regex("^pnl_"))
+@app.on_callback_query(filters.regex("^(pnl_|own_)"))
 async def panel_callbacks(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     settings = await get_settings()
@@ -202,181 +201,135 @@ async def panel_callbacks(client, callback_query: CallbackQuery):
         total_u = await users_col.count_documents({})
         active_u = await users_col.count_documents({"interactions": {"$gt": 0}})
         total_g = await groups_col.count_documents({})
-        
         top_users = await users_col.find().sort("interactions", -1).limit(5).to_list(length=5)
         lb_text = "\n".join([f"{i+1}. {u['name']} ({u['interactions']} msgs)" for i, u in enumerate(top_users)])
-        
         text = f"📊 **BOT STATS**\n\n👤 Total Users: {total_u}\n🔥 Active Users: {active_u}\n👥 Total Groups: {total_g}\n\n🏆 **Leaderboard:**\n{lb_text}"
         await callback_query.edit_message_text(text)
         
     elif data == "pnl_broadcast":
-        await callback_query.edit_message_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, Video, Document) with caption, and type `/broadcast`.\nBoth Admins and Owner can do this.")
-        
+        await callback_query.edit_message_text("📢 **How to Broadcast:**\nReply to ANY message (Text, Photo, Video, Document) with caption, and type `/broadcast`.")
+
     elif data == "pnl_owner":
         if not is_owner:
             await callback_query.answer("Only Aakash can access this!", show_alert=True)
             return
             
-        owner_text = """
-👑 **OWNER PANEL INSTRUCTIONS** 👑
+        owner_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ Welcome Msg", callback_data="own_welcome"),
+             InlineKeyboardButton("🔗 Change Links", callback_data="own_links")],
+            [InlineKeyboardButton("💳 UPI ID", callback_data="own_upi"),
+             InlineKeyboardButton("📞 Contacts", callback_data="own_contacts")],
+            [InlineKeyboardButton("👥 Add Admin", callback_data="own_addadmin"),
+             InlineKeyboardButton("🚫 Remove Admin", callback_data="own_deladmin")],
+            [InlineKeyboardButton("🔨 Ban User", callback_data="own_ban"),
+             InlineKeyboardButton("🕊️ Unban User", callback_data="own_unban")],
+            [InlineKeyboardButton("📊 Stats", callback_data="pnl_stats"),
+             InlineKeyboardButton("💾 Logs (Owner)", callback_data="own_logs")],
+            [InlineKeyboardButton("📢 Broadcast", callback_data="pnl_broadcast"),
+             InlineKeyboardButton("❌ Close", callback_data="own_close")]
+        ])
+        await callback_query.edit_message_text("✨ **Advanced Control Panel:**", reply_markup=owner_keyboard)
 
-**1. Edit Welcome Message (Supports Photo/Video with caption):**
-Send your beautiful photo, video, or just text. Add your caption. Then, **REPLY** to that message and type: `/setwelcome`
+    elif data == "own_welcome":
+        await callback_query.answer("Reply to a Photo/Video/Text with /setwelcome to change it!", show_alert=True)
+    elif data == "own_links":
+        await callback_query.answer("Type: /setlink <groups/owner/friends/games> <url> to update them!", show_alert=True)
+    elif data in ["own_addadmin", "own_deladmin"]:
+        await callback_query.answer(f"Type: /{data.split('_')[1]} <user_id> to manage admins.", show_alert=True)
+    elif data in ["own_upi", "own_contacts", "own_ban", "own_unban"]:
+        await callback_query.answer("🚧 Feature coming soon in next update!", show_alert=True)
+    elif data == "own_logs":
+        groups = await groups_col.find().to_list(length=None)
+        total_u = await users_col.count_documents({})
+        log_text = f"📂 **LOGS**\nTotal Users: {total_u}\nTotal Groups: {len(groups)}\n\n"
+        for g in groups:
+            log_text += f"▪️ {g.get('title', 'Unknown')} (ID: `{g['chat_id']}`)\n"
+        if len(log_text) > 4000: log_text = log_text[:4000] + "..."
+        await callback_query.edit_message_text(log_text)
+    elif data == "own_close":
+        await callback_query.message.delete()
 
-**2. Manage Admins:**
-`/addadmin <user_id>` (Adds a new admin)
-`/deladmin <user_id>` (Removes an admin)
-
-**3. Edit Button Links:**
-`/setlink <button_target> <url>`
-Targets: `groups`, `owner`, `friends`, `games`, `support`
-
-**4. Database Logs:**
-`/dblogs` (Shows all Groups & IDs)
-"""
-        await callback_query.edit_message_text(owner_text)
 
 # ====================================================================
-# OWNER-ONLY SETTINGS COMMANDS (ADMINS CANT ACCESS)
+# OWNER-ONLY COMMANDS (Backend logic)
 # ====================================================================
 
 @app.on_message(filters.command("setwelcome") & filters.private)
 async def set_welcome_cmd(client, message):
-    if message.from_user.id != OWNER_ID:
-        return
-        
+    if message.from_user.id != OWNER_ID: return
     if not message.reply_to_message:
-        await message.reply("⚠️ You must reply to a message to set it as welcome. Reply to a Photo or Video with caption, or just text.")
+        await message.reply("⚠️ Reply to a message with /setwelcome")
         return
-        
     rep = message.reply_to_message
-    media_type = None
-    media_id = None
+    media_type, media_id = None, None
     text = rep.text or rep.caption or ""
-    
     if rep.photo:
-        media_type = "photo"
-        media_id = rep.photo.file_id
+        media_type, media_id = "photo", rep.photo.file_id
     elif rep.video:
-        media_type = "video"
-        media_id = rep.video.file_id
+        media_type, media_id = "video", rep.video.file_id
         
-    await settings_col.update_one(
-        {"_id": "bot_config"},
-        {"$set": {"welcome_text": text, "welcome_media": media_id, "welcome_media_type": media_type}},
-        upsert=True
-    )
-    await message.reply("✅ New Welcome Message Saved and Deployed!")
+    await settings_col.update_one({"_id": "bot_config"}, {"$set": {"welcome_text": text, "welcome_media": media_id, "welcome_media_type": media_type}}, upsert=True)
+    await message.reply("✅ New Welcome Message Saved!")
 
 @app.on_message(filters.command("setlink") & filters.private)
 async def set_link_cmd(client, message):
-    if message.from_user.id != OWNER_ID:
-        return
-        
+    if message.from_user.id != OWNER_ID: return
     args = message.text.split(maxsplit=2)
     if len(args) < 3:
-        await message.reply("Usage: `/setlink <groups/owner/friends/games/support> <url>`")
+        await message.reply("Usage: `/setlink <groups/owner/friends/games> <url>`")
         return
-        
-    button_target = args[1].lower()
-    new_url = args[2]
-    
-    valid_targets = ["groups", "owner", "friends", "games", "support"]
-    if button_target not in valid_targets:
-        await message.reply(f"Invalid target. Please choose from: {', '.join(valid_targets)}")
-        return
-        
-    await settings_col.update_one(
-        {"_id": "bot_config"},
-        {"$set": {f"link_{button_target}": new_url}},
-        upsert=True
-    )
-    await message.reply(f"✅ The '{button_target.capitalize()}' link has been updated to:\n{new_url}")
+    target, new_url = args[1].lower(), args[2]
+    if target in ["groups", "owner", "friends", "games", "support"]:
+        await settings_col.update_one({"_id": "bot_config"}, {"$set": {f"link_{target}": new_url}}, upsert=True)
+        await message.reply(f"✅ {target.capitalize()} link updated!")
 
 @app.on_message(filters.command("addadmin") & filters.private)
 async def add_admin_cmd(client, message):
-    if message.from_user.id != OWNER_ID:
-        return
+    if message.from_user.id != OWNER_ID: return
     try:
         new_admin = int(message.text.split()[1])
         await settings_col.update_one({"_id": "bot_config"}, {"$addToSet": {"admins": new_admin}})
-        await message.reply(f"✅ Admin {new_admin} added successfully.")
-    except Exception as e:
-        await message.reply("Usage: `/addadmin <user_id>` (numeric ID only)")
+        await message.reply("✅ Admin added.")
+    except: pass
 
 @app.on_message(filters.command("deladmin") & filters.private)
 async def del_admin_cmd(client, message):
-    if message.from_user.id != OWNER_ID:
-        return
+    if message.from_user.id != OWNER_ID: return
     try:
         old_admin = int(message.text.split()[1])
         await settings_col.update_one({"_id": "bot_config"}, {"$pull": {"admins": old_admin}})
-        await message.reply(f"✅ Admin {old_admin} removed from database.")
-    except Exception as e:
-        await message.reply("Usage: `/deladmin <user_id>`")
-
-@app.on_message(filters.command("dblogs") & filters.private)
-async def dblogs_cmd(client, message):
-    if message.from_user.id != OWNER_ID:
-        return
-        
-    groups = await groups_col.find().to_list(length=None)
-    total_u = await users_col.count_documents({})
-    
-    log_text = f"📂 **DATABASE LOGS**\n\nTotal Users: {total_u}\nTotal Groups: {len(groups)}\n\n**Groups List:**\n"
-    for g in groups:
-        log_text += f"▪️ {g.get('title', 'Unknown Title')} (ID: `{g['chat_id']}`)\n"
-        
-    if len(log_text) > 4000:
-        log_text = log_text[:4000] + "...\n[Message too long, truncated]"
-        
-    await message.reply(log_text)
-
-# ====================================================================
-# BROADCAST COMMAND (ADMINS & OWNER - SUPPORTS ALL MEDIA)
-# ====================================================================
+        await message.reply("✅ Admin removed.")
+    except: pass
 
 @app.on_message(filters.command("broadcast") & filters.private)
 async def broadcast_cmd(client, message):
     settings = await get_settings()
     user_id = message.from_user.id
-    
-    if user_id != OWNER_ID and user_id not in settings.get("admins", []):
-        return
-        
+    if user_id != OWNER_ID and user_id not in settings.get("admins", []): return
     if not message.reply_to_message:
-        await message.reply("⚠️ You must reply to a message to broadcast it. Works with Text, Photos, Videos, Documents.")
+        await message.reply("⚠️ Reply to a message to broadcast it.")
         return
-        
     users = await users_col.find().to_list(length=None)
     sent = 0
-    msg = await message.reply_text("🚀 Broadcasting is in progress...")
-    
+    msg = await message.reply_text("🚀 Broadcasting...")
     for u in users:
         try:
             await message.reply_to_message.copy(u['user_id'])
             sent += 1
             await asyncio.sleep(0.1) 
-        except Exception as e:
-            pass 
-            
-    await msg.edit_text(f"✅ Broadcast complete!\nSent flawlessly to {sent} users.")
+        except: pass 
+    await msg.edit_text(f"✅ Broadcast complete to {sent} users.")
 
 
 # ====================================================================
 # BAKA-STYLE CHAT AI HANDLER (UNCHANGED)
 # ====================================================================
-@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin", "dblogs", "owner"]))
+@app.on_message(filters.text & ~filters.command(["start", "panel", "broadcast", "setwelcome", "setlink", "addadmin", "deladmin"]))
 async def handle_chat(client: Client, message: Message):
-    
     is_group = message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]
-    
     if is_group:
         bot_me = await client.get_me()
-        text_lower = message.text.lower()
-        is_reply_to_me = message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id
-        
-        if "deepsikha" not in text_lower and not is_reply_to_me:
+        if "deepsikha" not in message.text.lower() and not (message.reply_to_message and message.reply_to_message.from_user.id == bot_me.id):
             return
 
     user = await get_user_profile(message.from_user.id, message.from_user.first_name)
@@ -407,34 +360,22 @@ async def handle_chat(client: Client, message: Message):
     """
 
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
     for msg in user.get("history", []):
         messages_payload.append({"role": msg["role"], "content": msg["content"]})
-        
     messages_payload.append({"role": "user", "content": message.text})
 
     try:
-        try:
-            await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
-        except Exception:
-            pass
+        try: await client.send_chat_action(message.chat.id, enums.ChatAction.TYPING)
+        except: pass
         
         chat_completion = groq_client.chat.completions.create(
-            messages=messages_payload,
-            model="llama-3.1-8b-instant", 
-            temperature=0.3,
-            max_tokens=20 
+            messages=messages_payload, model="llama-3.1-8b-instant", temperature=0.3, max_tokens=20 
         )
-        
-        ai_reply = chat_completion.choices[0].message.content.strip()
-        ai_reply = ai_reply.replace("*", "") 
-        
+        ai_reply = chat_completion.choices[0].message.content.strip().replace("*", "") 
         await message.reply_text(ai_reply)
         await update_user_memory(message.from_user.id, message.text, ai_reply)
-
-    except Exception as e:
-        pass
+    except Exception: pass
 
 if __name__ == "__main__":
-    print("Deepsikha is starting with Database logic and structured layout...")
+    print("Deepsikha is running with Auto-Open Owner Panel...")
     app.run()
