@@ -22,7 +22,7 @@ web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Deepsikha is awake with Bottom Menu Panel!"
+    return "Deepsikha is awake with AI Command Fix!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -126,7 +126,6 @@ async def start_cmd(client, message):
     bot = await client.get_me()
     add_link = f"https://t.me/{bot.username}?startgroup=true"
     
-    # 1. Send the Welcome Message with Inline Links
     inline_kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 Groups", url=settings['link_groups']),
          InlineKeyboardButton("👑 Owner", url=settings['link_owner'])],
@@ -146,7 +145,6 @@ async def start_cmd(client, message):
     except Exception:
         await message.reply_text(settings["welcome_text"], reply_markup=inline_kb)
 
-    # 2. Attach the Bottom Keyboard if user is Owner/Admin
     if message.from_user.id == OWNER_ID or message.from_user.id in settings.get("admins", []):
         await message.reply_text("👇 Admin Menu Unlocked:", reply_markup=get_admin_bottom_keyboard())
 
@@ -329,17 +327,16 @@ async def broadcast_cmd(client, message):
 
 
 # ====================================================================
-# BAKA-STYLE CHAT AI HANDLER
+# BAKA-STYLE CHAT AI HANDLER (KILL-SWITCH APPLIED)
 # ====================================================================
-# STRICT REGEX: Ignores ANY message starting with "/" so /start is never sent to the AI
-@app.on_message(filters.text & ~filters.regex(r"^/"))
+@app.on_message(filters.text)
 async def handle_chat(client: Client, message: Message):
     
-    # Bulletproof catch: if it starts with slash, stop immediately
-    if message.text and message.text.startswith("/"):
+    # 🚨 THE KILL SWITCH 🚨
+    # If the message starts with a slash (like /start, /admin) 
+    # OR is a bottom menu click, the AI completely shuts down and ignores it.
+    if message.text.startswith("/"):
         return
-
-    # Ignore bottom keyboard inputs going to the AI
     if message.text in ["👑 Owner Panel", "📊 Stats", "📢 Broadcast", "📞 Contact Admin"]:
         return
 
@@ -400,5 +397,5 @@ async def handle_chat(client: Client, message: Message):
     except Exception: pass
 
 if __name__ == "__main__":
-    print("Deepsikha is running with Bottom Menu Panel & Bulletproof Start logic...")
+    print("Deepsikha is running with strict AI Command blocking...")
     app.run()
